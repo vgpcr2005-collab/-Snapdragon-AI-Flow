@@ -1,0 +1,9 @@
+[project]
+name = "snapdragon-aiflow"
+version = "0.1.0"
+description = "AI workload scheduler for Snapdragon-inspired systems"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
