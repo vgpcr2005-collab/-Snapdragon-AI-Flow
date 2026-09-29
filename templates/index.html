@@ -72,6 +72,22 @@
         white-space: nowrap;
       }
       .telemetry::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #45e497; }
+      .resource-alert {
+        width: min(480px, calc(100% - 48px));
+        max-width: none;
+        margin: auto;
+        padding: 22px;
+        background: #281b1b;
+        border: 1px solid rgba(255, 119, 91, 0.9);
+        border-radius: 8px;
+        color: #ffe8e1;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+      }
+      .resource-alert::backdrop { background: rgba(3, 8, 14, 0.78); }
+      .resource-alert h2 { margin: 0 0 6px; font-size: 16px; color: #ffb29f; }
+      .resource-alert p { margin: 4px 0; font-size: 13px; line-height: 1.5; }
+      .alert-dismiss { width: auto; flex: 0 0 auto; padding: 6px 10px; background: transparent; border-color: rgba(255,255,255,0.25); }
+      .notification-button { width: auto; padding: 8px 12px; margin: 0 0 16px; font-size: 12px; }
       .source-toggle {
         display: flex;
         gap: 6px;
@@ -279,6 +295,14 @@
             <div class="section-title" id="sectionTitle">System Overview</div>
             <div class="telemetry" id="telemetryStatus">Live telemetry</div>
           </div>
+          <button class="notification-button" id="enableNotifications" type="button">Enable desktop alerts</button>
+          <dialog class="resource-alert" id="resourceAlert" aria-labelledby="alertTitle" aria-describedby="alertMessages">
+            <div>
+              <h2 id="alertTitle"></h2>
+              <div id="alertMessages"></div>
+            </div>
+            <button class="alert-dismiss" id="dismissAlert" type="button" aria-label="Dismiss system alert">Dismiss</button>
+          </dialog>
           <div class="source-toggle" aria-label="Telemetry source">
             <button class="source-button active" data-source="live">LIVE DATA</button>
             <button class="source-button" data-source="simulation">SIMULATION</button>
@@ -398,10 +422,59 @@
       const telemetryStatus = document.getElementById('telemetryStatus');
       const chart = document.getElementById('historyChart');
       const exportBtn = document.getElementById('exportBtn');
+      const resourceAlert = document.getElementById('resourceAlert');
+      const alertTitle = document.getElementById('alertTitle');
+      const alertMessages = document.getElementById('alertMessages');
+      const dismissAlert = document.getElementById('dismissAlert');
+      const enableNotifications = document.getElementById('enableNotifications');
       const history = { cpu: [], battery: [], temperature: [] };
       let dataSource = 'live';
       let refreshInFlight = false;
       let latestResult = null;
+      let currentAlertSignature = '';
+
+      function updateResourceAlert(alerts) {
+        const signature = alerts.map((alert) => alert.type).sort().join(',');
+        if (!signature) {
+          currentAlertSignature = '';
+          if (resourceAlert.open) resourceAlert.close();
+          return;
+        }
+
+        if (signature !== currentAlertSignature) {
+          currentAlertSignature = signature;
+          alertTitle.textContent = alerts.length > 1 ? 'System needs attention' : alerts[0].title;
+          alertMessages.replaceChildren(...alerts.map((alert) => {
+            const message = document.createElement('p');
+            message.textContent = alert.message;
+            return message;
+          }));
+          if (!resourceAlert.open) resourceAlert.showModal();
+          if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+            const notification = new Notification(alertTitle.textContent, {
+              body: alerts.map((alert) => alert.message).join(' '),
+              tag: 'snapdragon-aiflow-resource-alert'
+            });
+            notification.addEventListener('click', () => {
+              window.focus();
+              notification.close();
+            });
+          }
+        }
+      }
+
+      function updateNotificationButton() {
+        if (!('Notification' in window)) {
+          enableNotifications.textContent = 'Desktop alerts unavailable';
+          enableNotifications.disabled = true;
+        } else if (Notification.permission === 'granted') {
+          enableNotifications.textContent = 'Desktop alerts enabled';
+          enableNotifications.disabled = true;
+        } else if (Notification.permission === 'denied') {
+          enableNotifications.textContent = 'Desktop alerts blocked in browser settings';
+          enableNotifications.disabled = true;
+        }
+      }
 
       const sectionContent = {
         dashboard: ['System Overview', 'Live system telemetry and the current accelerator recommendation are shown here.'],
@@ -490,6 +563,7 @@
           document.getElementById('thermalValue').textContent = result.thermal_state + ' (' + result.temperature_source + ')';
           document.getElementById('powerValue').textContent = result.power_state;
           document.getElementById('acceleratorValue').textContent = result.available_accelerators.length ? result.available_accelerators.join(', ').toUpperCase() : 'None detected';
+          updateResourceAlert(dataSource === 'live' ? result.alerts : []);
           drawHistory();
         } catch (err) {
           console.error('Dashboard refresh failed:', err);
@@ -529,6 +603,13 @@
 
       runBtn.addEventListener('click', refreshDashboard);
       runAction.addEventListener('click', refreshDashboard);
+      dismissAlert.addEventListener('click', () => resourceAlert.close());
+      enableNotifications.addEventListener('click', async () => {
+        if ('Notification' in window && Notification.permission === 'default') {
+          await Notification.requestPermission();
+          updateNotificationButton();
+        }
+      });
       modeSelect.addEventListener('change', refreshDashboard);
       workloadSelect.addEventListener('change', refreshDashboard);
       exportBtn.addEventListener('click', () => {
@@ -548,6 +629,7 @@
       });
 
       refreshDashboard();
+      updateNotificationButton();
       setInterval(refreshDashboard, 6000);
     </script>
   </body>

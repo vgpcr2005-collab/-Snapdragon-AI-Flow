@@ -58,3 +58,25 @@ def test_read_system_metrics_uses_env_overrides_for_live_demo_values(monkeypatch
     assert metrics.cpu == 9
     assert metrics.battery == 71
     assert metrics.temperature == 43
+
+
+def test_evaluate_reports_overheating_and_cpu_overload(monkeypatch):
+    import main
+
+    monkeypatch.setattr(
+        main,
+        "read_system_metrics_details",
+        lambda: (SystemMetrics(cpu=93, battery=60, temperature=84), "sensor"),
+    )
+
+    result = main.make_response()
+
+    assert [alert["type"] for alert in result["alerts"]] == ["thermal", "overload"]
+
+
+def test_simulation_profile_does_not_report_live_resource_alerts():
+    import main
+
+    result = main.make_response(source="simulation")
+
+    assert result["alerts"] == []

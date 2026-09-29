@@ -135,6 +135,19 @@ def make_response(workload_key: str = "vision", mode: str = "balanced", source: 
     decision = scheduler.explain_decision(workload, mode=mode)
     health = SystemMonitor().summarize(metrics)
     runtime_status = "simulation profile" if source == "simulation" else "host telemetry only"
+    alerts = []
+    if metrics.temperature > 80:
+        alerts.append({
+            "type": "thermal",
+            "title": "High system temperature",
+            "message": f"Temperature is {metrics.temperature}°C. Pause intensive work, close demanding apps, and let the device cool in a well-ventilated area.",
+        })
+    if metrics.cpu >= 90:
+        alerts.append({
+            "type": "overload",
+            "title": "CPU usage is very high",
+            "message": f"CPU usage is {metrics.cpu}%. Close apps or background tasks you are not using, then check whether usage drops.",
+        })
     return {
         "cpu": metrics.cpu,
         "gpu": metrics.gpu if source == "simulation" or metrics.gpu > 0 else None,
@@ -159,6 +172,7 @@ def make_response(workload_key: str = "vision", mode: str = "balanced", source: 
         "npu_telemetry": "available" if metrics.npu > 0 else "not exposed by host",
         "temperature_source": temperature_source,
         "gpu_telemetry": "available" if metrics.gpu > 0 else "not exposed by host",
+        "alerts": alerts,
     }
 
 
