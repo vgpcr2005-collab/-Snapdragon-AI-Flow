@@ -7,12 +7,13 @@
     <style>
       body {
         margin: 0;
+        min-width: 320px;
         background: linear-gradient(135deg, #07111f, #111b2d);
         color: #edf3ff;
         font-family: Arial, sans-serif;
       }
       .container {
-        width: 780px;
+        width: min(1100px, calc(100% - 40px));
         margin: 40px auto;
         background: rgba(15, 25, 40, 0.95);
         border: 1px solid rgba(122, 148, 255, 0.3);
@@ -36,7 +37,7 @@
       }
       .main {
         display: grid;
-        grid-template-columns: 210px 1fr;
+        grid-template-columns: 210px minmax(0, 1fr);
       }
       .sidebar {
         background: rgba(10, 18, 28, 0.7);
@@ -56,6 +57,7 @@
         color: #dfeaff;
       }
       .content {
+        min-width: 0;
         padding: 22px 24px 28px;
       }
       .content-heading {
@@ -125,21 +127,22 @@
       .section-panel { color: #d8e0f2; line-height: 1.6; }
       .section-panel[hidden] { display: none; }
       .metrics {
-        display: flex;
-        justify-content: space-between;
-        gap: 20px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
         margin: 20px 0 26px;
       }
       .metric {
-        flex: 1;
+        min-width: 0;
+        box-sizing: border-box;
         background: rgba(255,255,255,0.03);
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 12px;
         padding: 16px 14px;
         text-align: center;
       }
-      .metric .label { color: #8ea8d8; font-size: 12px; }
-      .metric .value { font-size: 26px; font-weight: bold; margin-top: 8px; }
+      .metric .label { color: #8ea8d8; font-size: 11px; line-height: 1.4; }
+      .metric .value { font-size: 24px; font-weight: bold; margin-top: 8px; overflow-wrap: anywhere; }
       .bar-row {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -270,13 +273,30 @@
         .sidebar { border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
         .nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
         .nav-button { margin-bottom: 0; }
-        .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .content { padding: 20px 16px 24px; }
+        .engineering-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 520px) {
+        .container { width: calc(100% - 16px); margin: 8px auto; }
+        .header { padding: 18px 12px; font-size: 24px; }
+        .content-heading { align-items: flex-start; flex-direction: column; }
+        .content-heading .section-title { font-size: 20px; }
+        .metrics { gap: 8px; }
+        .metric { padding: 12px 8px; }
+        .metric .label { font-size: 10px; }
+        .metric .value { font-size: 21px; }
+        .bar-row { grid-template-columns: 1fr; }
+        .engineering-grid { grid-template-columns: 1fr 1fr; }
+        .engineering-heading { align-items: flex-start; flex-direction: column; }
+        .source-toggle { flex-wrap: wrap; }
+        .workload-name { font-size: 21px; overflow-wrap: anywhere; }
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <div class="header">⚡ Snapdragon AIFlow</div>
+      <div class="header"> Snapdragon AIFlow  @VGPCR</div>
       <div class="subheader">Intelligent AI Workload Optimization</div>
 
       <div class="main">
@@ -345,11 +365,11 @@
             </div>
             <div class="metric">
               <div class="label">Battery</div>
-              <div class="value">{{ battery }}%</div>
+              <div class="value">{{ battery ~ '%' if battery is not none else 'N/A' }}</div>
             </div>
             <div class="metric">
               <div class="label">Temp</div>
-              <div class="value">{{ temperature }}°C</div>
+              <div class="value">{{ temperature ~ '°C' if temperature is not none else 'N/A' }}</div>
             </div>
           </div>
 
@@ -360,11 +380,11 @@
             </div>
             <div class="bar-card">
               <div class="bar-label">GPU UTILIZATION</div>
-              <div class="bar"><div class="fill gpu-fill" style="width: {{ gpu }}%;"></div></div>
+              <div class="bar"><div class="fill gpu-fill" style="width: {{ gpu or 0 }}%;"></div></div>
             </div>
             <div class="bar-card">
               <div class="bar-label">NPU UTILIZATION</div>
-              <div class="bar"><div class="fill npu-fill" style="width: {{ npu }}%;"></div></div>
+              <div class="bar"><div class="fill npu-fill" style="width: {{ npu or 0 }}%;"></div></div>
             </div>
           </div>
 
@@ -381,6 +401,7 @@
             <div class="engineering-grid">
               <div class="engineering-item"><small>Runtime target</small><span id="runtimeValue">Qualcomm AI Engine / QNN</span></div>
               <div class="engineering-item"><small>Integration status</small><span id="runtimeStatus">Host telemetry only</span></div>
+              <div class="engineering-item"><small>Battery telemetry</small><span id="batteryStatus">Available</span></div>
               <div class="engineering-item"><small>NPU telemetry</small><span id="npuStatus">Not exposed by host</span></div>
               <div class="engineering-item"><small>Thermal state</small><span id="thermalValue">Normal</span></div>
               <div class="engineering-item"><small>Power state</small><span id="powerValue">High</span></div>
@@ -484,10 +505,8 @@
         settings: ['Settings', 'Use Live Data for device readings or Simulation for a stable product demonstration.']
       };
 
-      function smooth(values, nextValue) {
-        const recent = values.slice(-4);
-        recent.push(Number(nextValue));
-        return Math.round(recent.reduce((sum, value) => sum + value, 0) / recent.length);
+      function formatReading(value, unit) {
+        return value === null || value === undefined ? 'N/A' : value + unit;
       }
 
       function drawHistory() {
@@ -530,12 +549,12 @@
           const response = await fetch(`/api/evaluate?mode=${encodeURIComponent(mode)}&workload=${encodeURIComponent(workload)}&source=${dataSource}`);
           const result = await response.json();
           latestResult = result;
-          const cpu = smooth(history.cpu, result.cpu);
-          const battery = smooth(history.battery, result.battery);
-          const temperature = smooth(history.temperature, result.temperature);
-          history.cpu.push(cpu);
-          history.battery.push(battery);
-          history.temperature.push(temperature);
+          const cpu = result.cpu;
+          const battery = result.battery;
+          const temperature = result.temperature;
+          Object.entries({ cpu, battery, temperature }).forEach(([key, value]) => {
+            if (Number.isFinite(value)) history[key].push(value);
+          });
           Object.keys(history).forEach((key) => { if (history[key].length > 30) history[key].shift(); });
 
           document.querySelector('.workload-name').textContent = result.workload_name;
@@ -544,12 +563,12 @@
           const npuText = result.npu === null ? 'N/A' : result.npu + '%';
           document.querySelectorAll('.metric .value')[1].textContent = gpuText;
           document.querySelectorAll('.metric .value')[2].textContent = npuText;
-          document.querySelectorAll('.metric .value')[3].textContent = battery + '%';
-          document.querySelectorAll('.metric .value')[4].textContent = temperature + '°C';
+          document.querySelectorAll('.metric .value')[3].textContent = formatReading(battery, '%');
+          document.querySelectorAll('.metric .value')[4].textContent = formatReading(temperature, '°C');
 
           document.querySelectorAll('.fill')[0].style.width = cpu + '%';
-          document.querySelectorAll('.fill')[1].style.width = (result.gpu || 0) + '%';
-          document.querySelectorAll('.fill')[2].style.width = (result.npu || 0) + '%';
+          document.querySelectorAll('.fill')[1].style.width = (result.gpu ?? 0) + '%';
+          document.querySelectorAll('.fill')[2].style.width = (result.npu ?? 0) + '%';
 
           document.querySelectorAll('.score-row strong')[0].textContent = result.cpu_score;
           document.querySelectorAll('.score-row strong')[1].textContent = result.gpu_score;
@@ -562,6 +581,7 @@
           document.getElementById('npuStatus').textContent = result.npu_telemetry;
           document.getElementById('thermalValue').textContent = result.thermal_state + ' (' + result.temperature_source + ')';
           document.getElementById('powerValue').textContent = result.power_state;
+          document.getElementById('batteryStatus').textContent = result.battery_source;
           document.getElementById('acceleratorValue').textContent = result.available_accelerators.length ? result.available_accelerators.join(', ').toUpperCase() : 'None detected';
           updateResourceAlert(dataSource === 'live' ? result.alerts : []);
           drawHistory();

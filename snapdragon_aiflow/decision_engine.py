@@ -25,8 +25,8 @@ class AIDecisionEngine:
         gpu_score += system_metrics.gpu * 0.25
         npu_score += system_metrics.npu * 0.3
 
-        battery_factor = max(0, 100 - system_metrics.battery)
-        thermal_factor = max(0, system_metrics.temperature - 40)
+        battery_factor = max(0, 100 - system_metrics.battery) if system_metrics.battery is not None else 0
+        thermal_factor = max(0, system_metrics.temperature - 40) if system_metrics.temperature is not None else 0
         latency_factor = 100 - workload_profile.latency_budget_ms
 
         if mode == "performance":
@@ -50,17 +50,18 @@ class AIDecisionEngine:
         gpu_score -= thermal_factor * 0.2
         npu_score += max(0, 30 - battery_factor * 0.2)
         npu_score -= thermal_factor * 0.15
-        cpu_score -= max(0, system_metrics.temperature - 75) * 0.2
+        if system_metrics.temperature is not None:
+            cpu_score -= max(0, system_metrics.temperature - 75) * 0.2
 
         resource_contention = (system_metrics.cpu * 0.12) + (system_metrics.gpu * 0.1) + (system_metrics.npu * 0.08)
         cpu_score -= resource_contention * 0.3
         gpu_score -= resource_contention * 0.45
         npu_score -= resource_contention * 0.2
 
-        if system_metrics.battery < 25:
+        if system_metrics.battery is not None and system_metrics.battery < 25:
             npu_score += 12
             gpu_score -= 6
-        if system_metrics.temperature > 80:
+        if system_metrics.temperature is not None and system_metrics.temperature > 80:
             gpu_score -= 18
             npu_score -= 6
 

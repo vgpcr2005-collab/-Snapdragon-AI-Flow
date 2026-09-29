@@ -1,8 +1,5 @@
-import json
 import os
 import platform
-import subprocess
-import time
 
 import psutil
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -26,33 +23,19 @@ WORKLOADS = {
     "summarization": {"label": "Document Summarization", "type": "text", "complexity": "low", "latency": 420},
 }
 
-_battery_cache = {"value": None, "expires_at": 0.0}
-
-
 def read_windows_battery():
-    now = time.monotonic()
-    if now < _battery_cache["expires_at"]:
-        return _battery_cache["value"]
     try:
-        out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command", "(Get-CimInstance -ClassName Win32_Battery | Select-Object -ExpandProperty EstimatedChargeRemaining -ErrorAction SilentlyContinue | Select-Object -First 1)"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        )
-        cleaned = out.strip()
-        if cleaned and cleaned.isdigit():
-            value = max(0, min(100, int(cleaned)))
-            _battery_cache.update(value=value, expires_at=now + 30)
-            return value
+        battery = psutil.sensors_battery()
+        if battery is not None and battery.percent is not None:
+            return round(battery.percent)
     except Exception:
         pass
-    _battery_cache.update(value=None, expires_at=now + 30)
     return None
 
 
 def read_windows_cpu_usage():
     try:
-        return int(psutil.cpu_percent(interval=0.1))
+        return round(psutil.cpu_percent(interval=1.0))
     except Exception:
         return 0
 
@@ -65,7 +48,7 @@ def read_temperature():
             return int(round(max(readings))), "sensor"
     except (AttributeError, OSError):
         pass
-    return None, "estimated"
+    return None, "unavailable"
 
 
 def read_system_metrics_details():
@@ -73,35 +56,39 @@ def read_system_metrics_details():
     battery_override = os.environ.get("AI_FLOW_BATTERY")
     temp_override = os.environ.get("AI_FLOW_TEMP")
 
-    cpu = int(cpu_override) if cpu_override and cpu_override.isdigit() else int(psutil.cpu_percent(interval=0.1))
+    cpu = int(cpu_override) if cpu_override and cpu_override.isdigit() else read_windows_cpu_usage()
 
     if platform.system() == "Windows":
         battery = read_windows_battery()
     else:
-        battery = psutil.sensors_battery().percent if psutil.sensors_battery() else None
+        battery_reading = psutil.sensors_battery()
+        battery = round(battery_reading.percent) if battery_reading and battery_reading.percent is not None else None
+    battery_source = "sensor" if battery is not None else "unavailable"
 
     if battery_override and battery_override.isdigit():
-        battery = int(battery_override)
+        battery = max(0, min(100, int(battery_override)))
+        battery_source = "override"
 
     if temp_override and temp_override.isdigit():
         temperature, temperature_source = int(temp_override), "override"
     else:
         temperature, temperature_source = read_temperature()
-        if temperature is None:
-            temperature = max(30, min(90, int(cpu * 0.6) + 30))
 
     gpu = 0
     npu = 0
 
-    if battery is None:
-        battery = 68
-
-    metrics = SystemMetrics(cpu=int(cpu), gpu=gpu, npu=npu, battery=int(battery), temperature=int(temperature))
-    return metrics, temperature_source
+    metrics = SystemMetrics(
+        cpu=max(0, min(100, int(cpu))),
+        gpu=gpu,
+        npu=npu,
+        battery=max(0, min(100, int(battery))) if battery is not None else None,
+        temperature=int(temperature) if temperature is not None else None,
+    )
+    return metrics, temperature_source, battery_source
 
 
 def read_system_metrics():
-    metrics, _ = read_system_metrics_details()
+    metrics, _, _ = read_system_metrics_details()
     return metrics
 
 
@@ -120,10 +107,11 @@ def build_workload(name: str = "Vision Analysis", workload_type: str = "vision",
 
 def make_response(workload_key: str = "vision", mode: str = "balanced", source: str = "live"):
     workload_config = WORKLOADS.get(workload_key, WORKLOADS["vision"])
-    metrics, temperature_source = read_system_metrics_details()
+    metrics, temperature_source, battery_source = read_system_metrics_details()
     if source == "simulation":
         metrics = SystemMetrics(cpu=24, gpu=38, npu=18, battery=71, temperature=43)
         temperature_source = "simulation"
+        battery_source = "simulation"
     workload = build_workload(
         name=workload_config["label"],
         workload_type=workload_config["type"],
@@ -136,7 +124,7 @@ def make_response(workload_key: str = "vision", mode: str = "balanced", source: 
     health = SystemMonitor().summarize(metrics)
     runtime_status = "simulation profile" if source == "simulation" else "host telemetry only"
     alerts = []
-    if metrics.temperature > 80:
+    if metrics.temperature is not None and metrics.temperature > 80:
         alerts.append({
             "type": "thermal",
             "title": "High system temperature",
@@ -170,6 +158,7 @@ def make_response(workload_key: str = "vision", mode: str = "balanced", source: 
         "runtime": "Qualcomm AI Engine / QNN",
         "runtime_status": runtime_status,
         "npu_telemetry": "available" if metrics.npu > 0 else "not exposed by host",
+        "battery_source": battery_source,
         "temperature_source": temperature_source,
         "gpu_telemetry": "available" if metrics.gpu > 0 else "not exposed by host",
         "alerts": alerts,

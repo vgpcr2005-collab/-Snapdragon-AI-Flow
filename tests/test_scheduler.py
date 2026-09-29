@@ -60,13 +60,45 @@ def test_read_system_metrics_uses_env_overrides_for_live_demo_values(monkeypatch
     assert metrics.temperature == 43
 
 
+def test_missing_hardware_readings_remain_unknown(monkeypatch):
+    import main
+
+    monkeypatch.delenv("AI_FLOW_CPU", raising=False)
+    monkeypatch.delenv("AI_FLOW_BATTERY", raising=False)
+    monkeypatch.delenv("AI_FLOW_TEMP", raising=False)
+    monkeypatch.setattr(main.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(main, "read_windows_cpu_usage", lambda: 19)
+    monkeypatch.setattr(main, "read_windows_battery", lambda: None)
+    monkeypatch.setattr(main, "read_temperature", lambda: (None, "unavailable"))
+
+    metrics, temperature_source, battery_source = main.read_system_metrics_details()
+
+    assert metrics.cpu == 19
+    assert metrics.battery is None
+    assert metrics.temperature is None
+    assert temperature_source == "unavailable"
+    assert battery_source == "unavailable"
+
+    monkeypatch.setattr(
+        main,
+        "read_system_metrics_details",
+        lambda: (metrics, temperature_source, battery_source),
+    )
+    response = main.make_response()
+
+    assert response["battery"] is None
+    assert response["temperature"] is None
+    assert response["thermal_state"] == "unknown"
+    assert response["power_state"] == "unknown"
+
+
 def test_evaluate_reports_overheating_and_cpu_overload(monkeypatch):
     import main
 
     monkeypatch.setattr(
         main,
         "read_system_metrics_details",
-        lambda: (SystemMetrics(cpu=93, battery=60, temperature=84), "sensor"),
+        lambda: (SystemMetrics(cpu=93, battery=60, temperature=84), "sensor", "sensor"),
     )
 
     result = main.make_response()

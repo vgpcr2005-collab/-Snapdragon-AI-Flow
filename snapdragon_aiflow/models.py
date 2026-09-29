@@ -6,8 +6,8 @@ class SystemMetrics:
     cpu: int = 0
     gpu: int = 0
     npu: int = 0
-    battery: int = 0
-    temperature: int = 0
+    battery: int | None = None
+    temperature: int | None = None
 
 
 @dataclass

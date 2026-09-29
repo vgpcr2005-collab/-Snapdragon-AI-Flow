@@ -50,9 +50,9 @@ class AIScheduler:
             score += 25
         if workload.model.latency_budget_ms <= 200:
             score += 20
-        if metrics.temperature > 80:
+        if metrics.temperature is not None and metrics.temperature > 80:
             score -= 40
-        if metrics.battery < 15:
+        if metrics.battery is not None and metrics.battery < 15:
             score -= 20
         return score
 
@@ -67,9 +67,9 @@ class AIScheduler:
             score += 30
         if workload.model.latency_budget_ms <= 400:
             score += 10
-        if metrics.temperature > 75:
+        if metrics.temperature is not None and metrics.temperature > 75:
             score -= 15
-        if metrics.battery < 30:
+        if metrics.battery is not None and metrics.battery < 30:
             score += 15
         return score
 
@@ -82,8 +82,8 @@ class AIScheduler:
             score += 15
         if workload.model.workload_type == "text":
             score += 10
-        if metrics.temperature > 90:
+        if metrics.temperature is not None and metrics.temperature > 90:
             score -= 35
-        if metrics.battery < 20:
+        if metrics.battery is not None and metrics.battery < 20:
             score -= 10
         return score
