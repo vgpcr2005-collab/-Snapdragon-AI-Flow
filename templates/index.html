@@ -74,6 +74,15 @@
         white-space: nowrap;
       }
       .telemetry::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #45e497; }
+      .telemetry-note {
+        margin: 0 0 16px;
+        padding: 10px 12px;
+        border-left: 3px solid #e6b65c;
+        background: rgba(230, 182, 92, 0.08);
+        color: #d9c9a5;
+        font-size: 12px;
+        line-height: 1.5;
+      }
       .resource-alert {
         width: min(480px, calc(100% - 48px));
         max-width: none;
@@ -313,8 +322,11 @@
         <div class="content">
           <div class="content-heading">
             <div class="section-title" id="sectionTitle">System Overview</div>
-            <div class="telemetry" id="telemetryStatus">Live telemetry</div>
+            <div class="telemetry" id="telemetryStatus">App host telemetry</div>
           </div>
+          <p class="telemetry-note" id="telemetryScope">Live readings come from the machine running this app. A cloud deployment cannot read the browser device's battery or temperature sensors.</p>
+                    <p class="telemetry-note" id="telemetryScope">CPU and temperature are measured on the app host. Battery uses this device's browser reading when the browser supports it.</p>
+                      <div class="telemetry" id="telemetryStatus">Device + host telemetry</div>
           <button class="notification-button" id="enableNotifications" type="button">Enable desktop alerts</button>
           <dialog class="resource-alert" id="resourceAlert" aria-labelledby="alertTitle" aria-describedby="alertMessages">
             <div>
@@ -364,11 +376,12 @@
               <div class="value">{{ npu if npu else 'N/A' }}</div>
             </div>
             <div class="metric">
-              <div class="label">Battery</div>
-              <div class="value">{{ battery ~ '%' if battery is not none else 'N/A' }}</div>
+              <div class="label">HOST BATTERY</div>
+              <div class="label">DEVICE BATTERY</div>
+              <div class="value" id="batteryValue">N/A</div>
             </div>
             <div class="metric">
-              <div class="label">Temp</div>
+              <div class="label">HOST TEMP</div>
               <div class="value">{{ temperature ~ '°C' if temperature is not none else 'N/A' }}</div>
             </div>
           </div>
@@ -402,6 +415,7 @@
               <div class="engineering-item"><small>Runtime target</small><span id="runtimeValue">Qualcomm AI Engine / QNN</span></div>
               <div class="engineering-item"><small>Integration status</small><span id="runtimeStatus">Host telemetry only</span></div>
               <div class="engineering-item"><small>Battery telemetry</small><span id="batteryStatus">Available</span></div>
+                            <div class="engineering-item"><small>Device battery</small><span id="batteryStatus">Checking browser support</span></div>
               <div class="engineering-item"><small>NPU telemetry</small><span id="npuStatus">Not exposed by host</span></div>
               <div class="engineering-item"><small>Thermal state</small><span id="thermalValue">Normal</span></div>
               <div class="engineering-item"><small>Power state</small><span id="powerValue">High</span></div>
@@ -441,6 +455,7 @@
       const sectionTitle = document.getElementById('sectionTitle');
       const sectionPanel = document.getElementById('sectionPanel');
       const telemetryStatus = document.getElementById('telemetryStatus');
+      const telemetryScope = document.getElementById('telemetryScope');
       const chart = document.getElementById('historyChart');
       const exportBtn = document.getElementById('exportBtn');
       const resourceAlert = document.getElementById('resourceAlert');
@@ -453,6 +468,8 @@
       let refreshInFlight = false;
       let latestResult = null;
       let currentAlertSignature = '';
+      let deviceBatteryPercent = null;
+      let deviceBatteryStatus = 'Checking browser support';
 
       function updateResourceAlert(alerts) {
         const signature = alerts.map((alert) => alert.type).sort().join(',');
@@ -509,6 +526,43 @@
         return value === null || value === undefined ? 'N/A' : value + unit;
       }
 
+      function renderBatteryReading(result = latestResult) {
+        const value = dataSource === 'simulation' ? result?.battery : deviceBatteryPercent;
+        document.getElementById('batteryValue').textContent = formatReading(value, '%');
+        document.getElementById('batteryStatus').textContent = dataSource === 'simulation'
+          ? 'Simulation profile'
+          : deviceBatteryStatus;
+      }
+
+      async function initializeDeviceBattery() {
+        if (typeof navigator.getBattery !== 'function') {
+          deviceBatteryStatus = 'Unavailable in this browser';
+          renderBatteryReading();
+          return;
+        }
+
+        try {
+          const battery = await navigator.getBattery();
+          const updateBattery = () => {
+            deviceBatteryPercent = Number.isFinite(battery.level)
+              ? Math.max(0, Math.min(100, Math.round(battery.level * 100)))
+              : null;
+            deviceBatteryStatus = deviceBatteryPercent === null
+              ? 'Unavailable in this browser'
+              : battery.charging ? 'This device, charging' : 'This device';
+            renderBatteryReading();
+            if (dataSource === 'live') refreshDashboard();
+          };
+          battery.addEventListener('levelchange', updateBattery);
+          battery.addEventListener('chargingchange', updateBattery);
+          updateBattery();
+        } catch {
+          deviceBatteryPercent = null;
+          deviceBatteryStatus = 'Unavailable in this browser';
+          renderBatteryReading();
+        }
+      }
+
       function drawHistory() {
         const context = chart.getContext('2d');
         const width = chart.width;
@@ -546,7 +600,12 @@
         const workload = workloadSelect.value;
 
         try {
-          const response = await fetch(`/api/evaluate?mode=${encodeURIComponent(mode)}&workload=${encodeURIComponent(workload)}&source=${dataSource}`);
+          const params = new URLSearchParams({ mode, workload, source: dataSource });
+          if (dataSource === 'live') {
+            params.set('use_client_battery', 'true');
+            if (deviceBatteryPercent !== null) params.set('client_battery', String(deviceBatteryPercent));
+          }
+          const response = await fetch(`/api/evaluate?${params}`);
           const result = await response.json();
           latestResult = result;
           const cpu = result.cpu;
@@ -563,7 +622,6 @@
           const npuText = result.npu === null ? 'N/A' : result.npu + '%';
           document.querySelectorAll('.metric .value')[1].textContent = gpuText;
           document.querySelectorAll('.metric .value')[2].textContent = npuText;
-          document.querySelectorAll('.metric .value')[3].textContent = formatReading(battery, '%');
           document.querySelectorAll('.metric .value')[4].textContent = formatReading(temperature, '°C');
 
           document.querySelectorAll('.fill')[0].style.width = cpu + '%';
@@ -575,13 +633,16 @@
           document.querySelectorAll('.score-row strong')[2].textContent = result.npu_score;
           document.querySelector('.target').textContent = result.recommended_target;
           document.querySelector('.reason').textContent = 'Reason: ' + result.reason;
-          telemetryStatus.textContent = dataSource === 'live' ? 'Live telemetry' : 'Simulation profile';
+          telemetryStatus.textContent = dataSource === 'live' ? 'Device + host telemetry' : 'Simulation profile';
+          telemetryScope.textContent = dataSource === 'live'
+            ? 'CPU and temperature are from the app host. Battery is from this device when exposed by the browser; unavailable readings show N/A.'
+            : 'Simulation values are sample data and do not describe the app server or this browser device.';
           document.getElementById('runtimeValue').textContent = result.runtime;
           document.getElementById('runtimeStatus').textContent = result.runtime_status;
           document.getElementById('npuStatus').textContent = result.npu_telemetry;
           document.getElementById('thermalValue').textContent = result.thermal_state + ' (' + result.temperature_source + ')';
           document.getElementById('powerValue').textContent = result.power_state;
-          document.getElementById('batteryStatus').textContent = result.battery_source;
+          renderBatteryReading(result);
           document.getElementById('acceleratorValue').textContent = result.available_accelerators.length ? result.available_accelerators.join(', ').toUpperCase() : 'None detected';
           updateResourceAlert(dataSource === 'live' ? result.alerts : []);
           drawHistory();
@@ -648,6 +709,7 @@
         URL.revokeObjectURL(link.href);
       });
 
+      initializeDeviceBattery();
       refreshDashboard();
       updateNotificationButton();
       setInterval(refreshDashboard, 6000);

@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from snapdragon_aiflow.models import ModelProfile, SystemMetrics, Workload
 from snapdragon_aiflow.scheduler import AIScheduler
 from snapdragon_aiflow.simulator import ScenarioSimulator
@@ -90,6 +92,39 @@ def test_missing_hardware_readings_remain_unknown(monkeypatch):
     assert response["temperature"] is None
     assert response["thermal_state"] == "unknown"
     assert response["power_state"] == "unknown"
+
+
+def test_temperature_reader_ignores_impossible_sensor_sentinel(monkeypatch):
+    import main
+
+    monkeypatch.setattr(
+        main.psutil,
+        "sensors_temperatures",
+        lambda: {"acpi": [SimpleNamespace(current=-273.15)]},
+        raising=False,
+    )
+
+    assert main.read_temperature() == (None, "unavailable")
+
+
+def test_client_battery_is_used_for_live_dashboard_and_scheduler():
+    import main
+
+    result = main.make_response(client_battery=18, use_client_battery=True)
+
+    assert result["battery"] == 18
+    assert result["battery_source"] == "browser"
+    assert result["power_state"] == "low"
+
+
+def test_live_dashboard_does_not_substitute_server_battery_when_client_is_unavailable():
+    import main
+
+    result = main.make_response(client_battery=None, use_client_battery=True)
+
+    assert result["battery"] is None
+    assert result["battery_source"] == "unavailable"
+    assert result["power_state"] == "unknown"
 
 
 def test_evaluate_reports_overheating_and_cpu_overload(monkeypatch):

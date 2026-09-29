@@ -43,7 +43,12 @@ def read_windows_cpu_usage():
 def read_temperature():
     try:
         sensors = psutil.sensors_temperatures()
-        readings = [entry.current for values in sensors.values() for entry in values if entry.current is not None]
+        readings = [
+            entry.current
+            for values in sensors.values()
+            for entry in values
+            if entry.current is not None and 0 <= entry.current <= 125
+        ]
         if readings:
             return int(round(max(readings))), "sensor"
     except (AttributeError, OSError):
@@ -69,8 +74,9 @@ def read_system_metrics_details():
         battery = max(0, min(100, int(battery_override)))
         battery_source = "override"
 
-    if temp_override and temp_override.isdigit():
-        temperature, temperature_source = int(temp_override), "override"
+    temperature_override = int(temp_override) if temp_override and temp_override.isdigit() else None
+    if temperature_override is not None and 0 <= temperature_override <= 125:
+        temperature, temperature_source = temperature_override, "override"
     else:
         temperature, temperature_source = read_temperature()
 
@@ -105,13 +111,22 @@ def build_workload(name: str = "Vision Analysis", workload_type: str = "vision",
     )
 
 
-def make_response(workload_key: str = "vision", mode: str = "balanced", source: str = "live"):
+def make_response(
+    workload_key: str = "vision",
+    mode: str = "balanced",
+    source: str = "live",
+    client_battery: int | None = None,
+    use_client_battery: bool = False,
+):
     workload_config = WORKLOADS.get(workload_key, WORKLOADS["vision"])
     metrics, temperature_source, battery_source = read_system_metrics_details()
     if source == "simulation":
         metrics = SystemMetrics(cpu=24, gpu=38, npu=18, battery=71, temperature=43)
         temperature_source = "simulation"
         battery_source = "simulation"
+    elif use_client_battery:
+        metrics.battery = client_battery
+        battery_source = "browser" if client_battery is not None else "unavailable"
     workload = build_workload(
         name=workload_config["label"],
         workload_type=workload_config["type"],
@@ -157,6 +172,7 @@ def make_response(workload_key: str = "vision", mode: str = "balanced", source: 
         "available_accelerators": health["available_accelerators"],
         "runtime": "Qualcomm AI Engine / QNN",
         "runtime_status": runtime_status,
+        "telemetry_scope": "simulation profile" if source == "simulation" else "app server",
         "npu_telemetry": "available" if metrics.npu > 0 else "not exposed by host",
         "battery_source": battery_source,
         "temperature_source": temperature_source,
@@ -186,11 +202,19 @@ def evaluate(
     mode: str = Query("balanced"),
     workload: str = Query("vision"),
     source: str = Query("live"),
+    client_battery: int | None = Query(None, ge=0, le=100),
+    use_client_battery: bool = Query(False),
 ):
     if workload not in WORKLOADS:
         valid_workloads = ", ".join(sorted(WORKLOADS))
         raise HTTPException(status_code=400, detail=f"Unknown workload '{workload}'. Valid workloads: {valid_workloads}")
-    result = make_response(workload_key=workload, mode=mode, source=source)
+    result = make_response(
+        workload_key=workload,
+        mode=mode,
+        source=source,
+        client_battery=client_battery,
+        use_client_battery=use_client_battery,
+    )
     return JSONResponse(content=result)
 
 
