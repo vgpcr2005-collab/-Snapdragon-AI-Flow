@@ -152,6 +152,7 @@
       }
       .metric .label { color: #8ea8d8; font-size: 11px; line-height: 1.4; }
       .metric .value { font-size: 24px; font-weight: bold; margin-top: 8px; overflow-wrap: anywhere; }
+      .metric .source { display: block; min-height: 15px; margin-top: 5px; color: #8ea8d8; font-size: 10px; line-height: 1.4; }
       .bar-row {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -322,11 +323,9 @@
         <div class="content">
           <div class="content-heading">
             <div class="section-title" id="sectionTitle">System Overview</div>
-            <div class="telemetry" id="telemetryStatus">App host telemetry</div>
+            <div class="telemetry" id="telemetryStatus">Device + host telemetry</div>
           </div>
-          <p class="telemetry-note" id="telemetryScope">Live readings come from the machine running this app. A cloud deployment cannot read the browser device's battery or temperature sensors.</p>
-                    <p class="telemetry-note" id="telemetryScope">CPU and temperature are measured on the app host. Battery uses this device's browser reading when the browser supports it.</p>
-                      <div class="telemetry" id="telemetryStatus">Device + host telemetry</div>
+          <p class="telemetry-note" id="telemetryScope">CPU and temperature are measured on the app host. Battery is read from this device when supported by the browser.</p>
           <button class="notification-button" id="enableNotifications" type="button">Enable desktop alerts</button>
           <dialog class="resource-alert" id="resourceAlert" aria-labelledby="alertTitle" aria-describedby="alertMessages">
             <div>
@@ -376,9 +375,9 @@
               <div class="value">{{ npu if npu else 'N/A' }}</div>
             </div>
             <div class="metric">
-              <div class="label">HOST BATTERY</div>
               <div class="label">DEVICE BATTERY</div>
               <div class="value" id="batteryValue">N/A</div>
+              <small class="source" id="batterySourceHint">Checking browser support</small>
             </div>
             <div class="metric">
               <div class="label">HOST TEMP</div>
@@ -414,8 +413,7 @@
             <div class="engineering-grid">
               <div class="engineering-item"><small>Runtime target</small><span id="runtimeValue">Qualcomm AI Engine / QNN</span></div>
               <div class="engineering-item"><small>Integration status</small><span id="runtimeStatus">Host telemetry only</span></div>
-              <div class="engineering-item"><small>Battery telemetry</small><span id="batteryStatus">Available</span></div>
-                            <div class="engineering-item"><small>Device battery</small><span id="batteryStatus">Checking browser support</span></div>
+              <div class="engineering-item"><small>Device battery</small><span id="batteryStatus">Checking browser support</span></div>
               <div class="engineering-item"><small>NPU telemetry</small><span id="npuStatus">Not exposed by host</span></div>
               <div class="engineering-item"><small>Thermal state</small><span id="thermalValue">Normal</span></div>
               <div class="engineering-item"><small>Power state</small><span id="powerValue">High</span></div>
@@ -528,10 +526,10 @@
 
       function renderBatteryReading(result = latestResult) {
         const value = dataSource === 'simulation' ? result?.battery : deviceBatteryPercent;
+        const status = dataSource === 'simulation' ? 'Simulation profile' : deviceBatteryStatus;
         document.getElementById('batteryValue').textContent = formatReading(value, '%');
-        document.getElementById('batteryStatus').textContent = dataSource === 'simulation'
-          ? 'Simulation profile'
-          : deviceBatteryStatus;
+        document.getElementById('batteryStatus').textContent = status;
+        document.getElementById('batterySourceHint').textContent = status;
       }
 
       async function initializeDeviceBattery() {
