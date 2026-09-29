@@ -184,7 +184,7 @@ def make_response(
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     result = make_response()
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "index.html",
         {
             "request": request,
@@ -195,6 +195,8 @@ def dashboard(request: Request):
             "selected_workload": "vision",
         },
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
 
 
 @app.get("/api/evaluate")
@@ -215,7 +217,10 @@ def evaluate(
         client_battery=client_battery,
         use_client_battery=use_client_battery,
     )
-    return JSONResponse(content=result)
+    return JSONResponse(
+        content=result,
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
 
 
 @app.get("/health")
